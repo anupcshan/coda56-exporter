@@ -42,8 +42,8 @@ The exporter exposes the following metrics:
 - `hitron_downstream_power_dbmv`: Power level in dBmV
 - `hitron_downstream_snr_db`: Signal-to-noise ratio in dB
 - `hitron_downstream_frequency_hz`: Frequency in Hz
-- `hitron_downstream_correctables`: Current correctable error count
-- `hitron_downstream_uncorrectables`: Current uncorrectable error count
+- `hitron_downstream_correctables`: Current correctable error count (gauge)
+- `hitron_downstream_uncorrectables`: Current uncorrectable error count (gauge)
 - `hitron_downstream_octets_bytes`: Data received in bytes
 
 ### QAM Upstream Channel Metrics (4 channels)
@@ -55,8 +55,8 @@ The exporter exposes the following metrics:
 - `hitron_ofdm_downstream_power_dbmv`: Power level in dBmV
 - `hitron_ofdm_downstream_snr_db`: Signal-to-noise ratio in dB
 - `hitron_ofdm_downstream_frequency_hz`: Frequency in Hz
-- `hitron_ofdm_downstream_correctables`: Current correctable error count
-- `hitron_ofdm_downstream_uncorrectables`: Current uncorrectable error count
+- `hitron_ofdm_downstream_correctables`: Current correctable error count (gauge)
+- `hitron_ofdm_downstream_uncorrectables`: Current uncorrectable error count (gauge)
 - `hitron_ofdm_downstream_octets_bytes`: Data received in bytes
 - `hitron_ofdm_downstream_locks`: Lock status for PLC/NCP/MDC1 (1=locked, 0=unlocked)
 
@@ -90,13 +90,9 @@ The Hitron CODA56 modem requires requests to come from the 192.168.100.x network
 
 ## Development Notes
 
-The current implementation includes placeholder parsers for the HTML/JavaScript responses from the modem's API endpoints. The actual parsing logic needs to be implemented based on the specific format returned by your modem firmware version.
+The implementation includes JSON parsers for the modem's API endpoints. The modem returns JSON data that is parsed to extract metrics. Error counters are implemented as gauges (not counters) since they represent current state rather than incremental values.
 
-To implement the parsers:
-
-1. Capture sample responses from each endpoint
-2. Analyze the HTML/JavaScript structure
-3. Implement appropriate parsing logic in the `parse*Info` methods
+The complex octet format for QAM downstream channels (e.g., "53 * 2e32 + 4142950845") is handled by the `parseComplexOctets` function, which correctly calculates the total bytes transferred.
 
 ## License
 
