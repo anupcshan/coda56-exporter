@@ -290,8 +290,8 @@ type MetricsCollector struct {
 	downstreamPower          *prometheus.GaugeVec
 	downstreamSNR            *prometheus.GaugeVec
 	downstreamFreq           *prometheus.GaugeVec
-	downstreamCorrectables   *prometheus.CounterVec
-	downstreamUncorrectables *prometheus.CounterVec
+	downstreamCorrectables   *prometheus.GaugeVec
+	downstreamUncorrectables *prometheus.GaugeVec
 	downstreamOctets         *prometheus.GaugeVec
 
 	// Upstream metrics
@@ -303,8 +303,8 @@ type MetricsCollector struct {
 	ofdmDownstreamPower          *prometheus.GaugeVec
 	ofdmDownstreamSNR            *prometheus.GaugeVec
 	ofdmDownstreamFreq           *prometheus.GaugeVec
-	ofdmDownstreamCorrectables   *prometheus.CounterVec
-	ofdmDownstreamUncorrectables *prometheus.CounterVec
+	ofdmDownstreamCorrectables   *prometheus.GaugeVec
+	ofdmDownstreamUncorrectables *prometheus.GaugeVec
 	ofdmDownstreamOctets         *prometheus.GaugeVec
 	ofdmDownstreamLocks          *prometheus.GaugeVec
 
@@ -350,18 +350,18 @@ func NewMetricsCollector(client *ModemClient) *MetricsCollector {
 			[]string{"channel_id", "modulation"},
 		),
 
-		downstreamCorrectables: prometheus.NewCounterVec(
-			prometheus.CounterOpts{
-				Name: "hitron_downstream_correctables_total",
-				Help: "Total number of correctable errors on downstream channel",
+		downstreamCorrectables: prometheus.NewGaugeVec(
+			prometheus.GaugeOpts{
+				Name: "hitron_downstream_correctables",
+				Help: "Number of correctable errors on downstream channel",
 			},
 			[]string{"channel_id", "frequency", "modulation"},
 		),
 
-		downstreamUncorrectables: prometheus.NewCounterVec(
-			prometheus.CounterOpts{
-				Name: "hitron_downstream_uncorrectables_total",
-				Help: "Total number of uncorrectable errors on downstream channel",
+		downstreamUncorrectables: prometheus.NewGaugeVec(
+			prometheus.GaugeOpts{
+				Name: "hitron_downstream_uncorrectables",
+				Help: "Number of uncorrectable errors on downstream channel",
 			},
 			[]string{"channel_id", "frequency", "modulation"},
 		),
@@ -431,18 +431,18 @@ func NewMetricsCollector(client *ModemClient) *MetricsCollector {
 			[]string{"receive", "fft_type"},
 		),
 
-		ofdmDownstreamCorrectables: prometheus.NewCounterVec(
-			prometheus.CounterOpts{
-				Name: "hitron_ofdm_downstream_correctables_total",
-				Help: "Total number of correctable errors on OFDM downstream channel",
+		ofdmDownstreamCorrectables: prometheus.NewGaugeVec(
+			prometheus.GaugeOpts{
+				Name: "hitron_ofdm_downstream_correctables",
+				Help: "Number of correctable errors on OFDM downstream channel",
 			},
 			[]string{"receive", "frequency", "fft_type"},
 		),
 
-		ofdmDownstreamUncorrectables: prometheus.NewCounterVec(
-			prometheus.CounterOpts{
-				Name: "hitron_ofdm_downstream_uncorrectables_total",
-				Help: "Total number of uncorrectable errors on OFDM downstream channel",
+		ofdmDownstreamUncorrectables: prometheus.NewGaugeVec(
+			prometheus.GaugeOpts{
+				Name: "hitron_ofdm_downstream_uncorrectables",
+				Help: "Number of uncorrectable errors on OFDM downstream channel",
 			},
 			[]string{"receive", "frequency", "fft_type"},
 		),
@@ -567,8 +567,8 @@ func (c *MetricsCollector) Collect(ch chan<- prometheus.Metric) {
 			c.downstreamPower.WithLabelValues(labels...).Set(powerLevel)
 			c.downstreamSNR.WithLabelValues(labels...).Set(snr)
 			c.downstreamFreq.WithLabelValues(channel.ChannelID, channel.Modulation).Set(frequency)
-			c.downstreamCorrectables.WithLabelValues(labels...).Add(float64(corrected))
-			c.downstreamUncorrectables.WithLabelValues(labels...).Add(float64(uncorrect))
+			c.downstreamCorrectables.WithLabelValues(labels...).Set(float64(corrected))
+			c.downstreamUncorrectables.WithLabelValues(labels...).Set(float64(uncorrect))
 			c.downstreamOctets.WithLabelValues(labels...).Set(float64(octets))
 		}
 	}
@@ -621,8 +621,8 @@ func (c *MetricsCollector) Collect(ch chan<- prometheus.Metric) {
 			c.ofdmDownstreamPower.WithLabelValues(labels...).Set(powerLevel)
 			c.ofdmDownstreamSNR.WithLabelValues(labels...).Set(snr)
 			c.ofdmDownstreamFreq.WithLabelValues(channel.Receive, channel.FFTType).Set(frequency)
-			c.ofdmDownstreamCorrectables.WithLabelValues(labels...).Add(float64(corrected))
-			c.ofdmDownstreamUncorrectables.WithLabelValues(labels...).Add(float64(uncorrect))
+			c.ofdmDownstreamCorrectables.WithLabelValues(labels...).Set(float64(corrected))
+			c.ofdmDownstreamUncorrectables.WithLabelValues(labels...).Set(float64(uncorrect))
 			c.ofdmDownstreamOctets.WithLabelValues(labels...).Set(float64(octets))
 
 			// Lock status metrics
