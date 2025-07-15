@@ -22,7 +22,7 @@ go build -o coda56-exporter
 # Run with custom settings
 ./coda56-exporter \
   -modem-host https://192.168.100.1 \
-  -listen-addr :8080 \
+  -listen-addr :2632 \
   -interval 30s \
   -timeout 10s
 ```
@@ -30,7 +30,7 @@ go build -o coda56-exporter
 ## Command Line Options
 
 - `-modem-host`: Hitron CODA56 modem host URL (default: https://192.168.100.1)
-- `-listen-addr`: Address to listen on for HTTP requests (default: :8080)
+- `-listen-addr`: Address to listen on for HTTP requests (default: :2632)
 - `-interval`: Polling interval (default: 30s)
 - `-timeout`: HTTP request timeout (default: 10s)
 

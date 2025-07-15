@@ -18,7 +18,7 @@ import (
 
 var (
 	modemHost  = flag.String("modem-host", "https://192.168.100.1", "Hitron CODA56 modem host URL")
-	listenAddr = flag.String("listen-addr", ":8080", "Address to listen on for HTTP requests")
+	listenAddr = flag.String("listen-addr", ":2632", "Address to listen on for HTTP requests")
 	interval   = flag.Duration("interval", 30*time.Second, "Polling interval")
 	timeout    = flag.Duration("timeout", 10*time.Second, "HTTP request timeout")
 )
