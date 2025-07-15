@@ -2,6 +2,7 @@ package main
 
 import (
 	"crypto/tls"
+	"encoding/json"
 	"flag"
 	"fmt"
 	"io"
@@ -27,29 +28,41 @@ type ModemClient struct {
 }
 
 type DownstreamInfo struct {
-	ChannelID      int
-	Frequency      float64
-	PowerLevel     float64
-	SNR            float64
-	Modulation     string
-	Corrected      int64
-	Uncorrectables int64
+	PortID         string `json:"portId"`
+	Frequency      string `json:"frequency"`
+	Modulation     string `json:"modulation"`
+	SignalStrength string `json:"signalStrength"`
+	SNR            string `json:"snr"`
+	DSoctets       string `json:"dsoctets"`
+	Correcteds     string `json:"correcteds"`
+	Uncorrect      string `json:"uncorrect"`
+	ChannelID      string `json:"channelId"`
 }
 
 type UpstreamInfo struct {
-	ChannelID  int
-	Frequency  float64
-	PowerLevel float64
-	SymbolRate float64
-	Modulation string
+	PortID         string `json:"portId"`
+	Frequency      string `json:"frequency"`
+	Bandwidth      string `json:"bandwidth"`
+	ModType        string `json:"modtype"`
+	ScdmaMode      string `json:"scdmaMode"`
+	SignalStrength string `json:"signalStrength"`
+	ChannelID      string `json:"channelId"`
 }
 
 type SystemInfo struct {
-	UpTime          string
-	SystemTime      string
-	HardwareVersion string
-	SoftwareVersion string
-	SerialNumber    string
+	HWVersion     string `json:"hwVersion"`
+	SWVersion     string `json:"swVersion"`
+	SerialNumber  string `json:"serialNumber"`
+	RFMac         string `json:"rfMac"`
+	WanIP         string `json:"wanIp"`
+	SystemUptime  string `json:"systemUptime"`
+	SystemTime    string `json:"systemTime"`
+	Timezone      string `json:"timezone"`
+	WRecPkt       string `json:"WRecPkt"`
+	WSendPkt      string `json:"WSendPkt"`
+	LanIP         string `json:"lanIp"`
+	LRecPkt       string `json:"LRecPkt"`
+	LSendPkt      string `json:"LSendPkt"`
 }
 
 func NewModemClient(baseURL string, timeout time.Duration) *ModemClient {
@@ -89,33 +102,33 @@ func (m *ModemClient) get(endpoint string) ([]byte, error) {
 }
 
 func (m *ModemClient) parseDownstreamInfo(data []byte) ([]DownstreamInfo, error) {
-	// Parse the HTML/JavaScript response from dsinfo.asp
 	var channels []DownstreamInfo
-
-	// This is a simplified parser - in reality, you'd need to parse the actual HTML/JS
-	// For now, return empty slice to establish the structure
-	log.Println("Parsing downstream info")
+	if err := json.Unmarshal(data, &channels); err != nil {
+		return nil, fmt.Errorf("failed to parse downstream info JSON: %w", err)
+	}
+	log.Printf("Parsed %d downstream channels", len(channels))
 	return channels, nil
 }
 
 func (m *ModemClient) parseUpstreamInfo(data []byte) ([]UpstreamInfo, error) {
-	// Parse the HTML/JavaScript response from usinfo.asp
 	var channels []UpstreamInfo
-
-	// This is a simplified parser - in reality, you'd need to parse the actual HTML/JS
-	// For now, return empty slice to establish the structure
-	log.Println("Parsing upstream info")
+	if err := json.Unmarshal(data, &channels); err != nil {
+		return nil, fmt.Errorf("failed to parse upstream info JSON: %w", err)
+	}
+	log.Printf("Parsed %d upstream channels", len(channels))
 	return channels, nil
 }
 
 func (m *ModemClient) parseSystemInfo(data []byte) (*SystemInfo, error) {
-	// Parse the HTML/JavaScript response from getSysInfo.asp
-	var sysInfo SystemInfo
-
-	// This is a simplified parser - in reality, you'd need to parse the actual HTML/JS
-	// For now, return empty struct to establish the structure
-	log.Println("Parsing system info")
-	return &sysInfo, nil
+	var sysInfoArray []SystemInfo
+	if err := json.Unmarshal(data, &sysInfoArray); err != nil {
+		return nil, fmt.Errorf("failed to parse system info JSON: %w", err)
+	}
+	if len(sysInfoArray) == 0 {
+		return nil, fmt.Errorf("empty system info response")
+	}
+	log.Println("Parsed system info")
+	return &sysInfoArray[0], nil
 }
 
 func (m *ModemClient) GetDownstreamInfo() ([]DownstreamInfo, error) {
@@ -258,17 +271,24 @@ func (c *MetricsCollector) Collect(ch chan<- prometheus.Metric) {
 		log.Printf("Failed to get downstream info: %v", err)
 	} else {
 		for _, channel := range dsInfo {
+			// Parse numeric values from strings
+			frequency, _ := strconv.ParseFloat(channel.Frequency, 64)
+			powerLevel, _ := strconv.ParseFloat(channel.SignalStrength, 64)
+			snr, _ := strconv.ParseFloat(channel.SNR, 64)
+			corrected, _ := strconv.ParseInt(channel.Correcteds, 10, 64)
+			uncorrect, _ := strconv.ParseInt(channel.Uncorrect, 10, 64)
+			
 			labels := []string{
-				strconv.Itoa(channel.ChannelID),
-				fmt.Sprintf("%.0f", channel.Frequency),
+				channel.ChannelID,
+				channel.Frequency,
 				channel.Modulation,
 			}
 
-			c.downstreamPower.WithLabelValues(labels...).Set(channel.PowerLevel)
-			c.downstreamSNR.WithLabelValues(labels...).Set(channel.SNR)
-			c.downstreamFreq.WithLabelValues(strconv.Itoa(channel.ChannelID), channel.Modulation).Set(channel.Frequency)
-			c.downstreamCorrectables.WithLabelValues(labels...).Add(float64(channel.Corrected))
-			c.downstreamUncorrectables.WithLabelValues(labels...).Add(float64(channel.Uncorrectables))
+			c.downstreamPower.WithLabelValues(labels...).Set(powerLevel)
+			c.downstreamSNR.WithLabelValues(labels...).Set(snr)
+			c.downstreamFreq.WithLabelValues(channel.ChannelID, channel.Modulation).Set(frequency)
+			c.downstreamCorrectables.WithLabelValues(labels...).Add(float64(corrected))
+			c.downstreamUncorrectables.WithLabelValues(labels...).Add(float64(uncorrect))
 		}
 	}
 
@@ -278,15 +298,20 @@ func (c *MetricsCollector) Collect(ch chan<- prometheus.Metric) {
 		log.Printf("Failed to get upstream info: %v", err)
 	} else {
 		for _, channel := range usInfo {
+			// Parse numeric values from strings
+			frequency, _ := strconv.ParseFloat(channel.Frequency, 64)
+			powerLevel, _ := strconv.ParseFloat(channel.SignalStrength, 64)
+			bandwidth, _ := strconv.ParseFloat(channel.Bandwidth, 64)
+			
 			labels := []string{
-				strconv.Itoa(channel.ChannelID),
-				fmt.Sprintf("%.0f", channel.Frequency),
-				channel.Modulation,
+				channel.ChannelID,
+				channel.Frequency,
+				channel.ModType,
 			}
 
-			c.upstreamPower.WithLabelValues(labels...).Set(channel.PowerLevel)
-			c.upstreamFreq.WithLabelValues(strconv.Itoa(channel.ChannelID), channel.Modulation).Set(channel.Frequency)
-			c.upstreamSymbolRate.WithLabelValues(labels...).Set(channel.SymbolRate)
+			c.upstreamPower.WithLabelValues(labels...).Set(powerLevel)
+			c.upstreamFreq.WithLabelValues(channel.ChannelID, channel.ModType).Set(frequency)
+			c.upstreamSymbolRate.WithLabelValues(labels...).Set(bandwidth)
 		}
 	}
 
@@ -296,8 +321,8 @@ func (c *MetricsCollector) Collect(ch chan<- prometheus.Metric) {
 		log.Printf("Failed to get system info: %v", err)
 	} else {
 		c.systemInfo.WithLabelValues(
-			sysInfo.HardwareVersion,
-			sysInfo.SoftwareVersion,
+			sysInfo.HWVersion,
+			sysInfo.SWVersion,
 			sysInfo.SerialNumber,
 		).Set(1)
 	}
