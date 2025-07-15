@@ -9,6 +9,7 @@ import (
 	"log"
 	"net/http"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/prometheus/client_golang/prometheus"
@@ -63,6 +64,38 @@ type SystemInfo struct {
 	LanIP         string `json:"lanIp"`
 	LRecPkt       string `json:"LRecPkt"`
 	LSendPkt      string `json:"LSendPkt"`
+}
+
+type OFDMDownstreamInfo struct {
+	Receive            string `json:"receive"`
+	FFTType            string `json:"ffttype"`
+	Subcarr0freqFreq   string `json:"Subcarr0freqFreq"`
+	PLCLock            string `json:"plclock"`
+	NCPLock            string `json:"ncplock"`
+	MDC1Lock           string `json:"mdc1lock"`
+	PLCPower           string `json:"plcpower"`
+	SNR                string `json:"SNR"`
+	DSoctets           string `json:"dsoctets"`
+	Correcteds         string `json:"correcteds"`
+	Uncorrect          string `json:"uncorrect"`
+}
+
+type OFDMUpstreamInfo struct {
+	USCHIndex    string `json:"uschindex"`
+	State        string `json:"state"`
+	Frequency    string `json:"frequency"`
+	DigAtten     string `json:"digAtten"`
+	DigAttenBo   string `json:"digAttenBo"`
+	ChannelBw    string `json:"channelBw"`
+	RepPower     string `json:"repPower"`
+	RepPower1_6  string `json:"repPower1_6"`
+	FFTVal       string `json:"fftVal"`
+}
+
+type LinkStatus struct {
+	LinkStatus string `json:"LinkStatus"`
+	LinkDuplex string `json:"LinkDuplex"`
+	LinkSpeed  string `json:"LinkSpeed"`
 }
 
 func NewModemClient(baseURL string, timeout time.Duration) *ModemClient {
@@ -155,6 +188,60 @@ func (m *ModemClient) GetSystemInfo() (*SystemInfo, error) {
 	return m.parseSystemInfo(data)
 }
 
+func (m *ModemClient) parseOFDMDownstreamInfo(data []byte) ([]OFDMDownstreamInfo, error) {
+	var channels []OFDMDownstreamInfo
+	if err := json.Unmarshal(data, &channels); err != nil {
+		return nil, fmt.Errorf("failed to parse OFDM downstream info JSON: %w", err)
+	}
+	log.Printf("Parsed %d OFDM downstream channels", len(channels))
+	return channels, nil
+}
+
+func (m *ModemClient) parseOFDMUpstreamInfo(data []byte) ([]OFDMUpstreamInfo, error) {
+	var channels []OFDMUpstreamInfo
+	if err := json.Unmarshal(data, &channels); err != nil {
+		return nil, fmt.Errorf("failed to parse OFDM upstream info JSON: %w", err)
+	}
+	log.Printf("Parsed %d OFDM upstream channels", len(channels))
+	return channels, nil
+}
+
+func (m *ModemClient) parseLinkStatus(data []byte) (*LinkStatus, error) {
+	var linkStatusArray []LinkStatus
+	if err := json.Unmarshal(data, &linkStatusArray); err != nil {
+		return nil, fmt.Errorf("failed to parse link status JSON: %w", err)
+	}
+	if len(linkStatusArray) == 0 {
+		return nil, fmt.Errorf("empty link status response")
+	}
+	log.Println("Parsed link status")
+	return &linkStatusArray[0], nil
+}
+
+func (m *ModemClient) GetOFDMDownstreamInfo() ([]OFDMDownstreamInfo, error) {
+	data, err := m.get("dsofdminfo.asp")
+	if err != nil {
+		return nil, err
+	}
+	return m.parseOFDMDownstreamInfo(data)
+}
+
+func (m *ModemClient) GetOFDMUpstreamInfo() ([]OFDMUpstreamInfo, error) {
+	data, err := m.get("usofdminfo.asp")
+	if err != nil {
+		return nil, err
+	}
+	return m.parseOFDMUpstreamInfo(data)
+}
+
+func (m *ModemClient) GetLinkStatus() (*LinkStatus, error) {
+	data, err := m.get("getLinkStatus.asp")
+	if err != nil {
+		return nil, err
+	}
+	return m.parseLinkStatus(data)
+}
+
 type MetricsCollector struct {
 	client *ModemClient
 
@@ -169,6 +256,24 @@ type MetricsCollector struct {
 	upstreamPower      *prometheus.GaugeVec
 	upstreamFreq       *prometheus.GaugeVec
 	upstreamSymbolRate *prometheus.GaugeVec
+
+	// OFDM Downstream metrics
+	ofdmDownstreamPower          *prometheus.GaugeVec
+	ofdmDownstreamSNR            *prometheus.GaugeVec
+	ofdmDownstreamFreq           *prometheus.GaugeVec
+	ofdmDownstreamCorrectables   *prometheus.CounterVec
+	ofdmDownstreamUncorrectables *prometheus.CounterVec
+	ofdmDownstreamLocks          *prometheus.GaugeVec
+
+	// OFDM Upstream metrics
+	ofdmUpstreamPower     *prometheus.GaugeVec
+	ofdmUpstreamFreq      *prometheus.GaugeVec
+	ofdmUpstreamBandwidth *prometheus.GaugeVec
+	ofdmUpstreamState     *prometheus.GaugeVec
+
+	// Link status metrics
+	linkStatus *prometheus.GaugeVec
+	linkSpeed  *prometheus.GaugeVec
 
 	// System metrics
 	systemInfo *prometheus.GaugeVec
@@ -249,6 +354,105 @@ func NewMetricsCollector(client *ModemClient) *MetricsCollector {
 			},
 			[]string{"hardware_version", "software_version", "serial_number"},
 		),
+
+		// OFDM Downstream metrics
+		ofdmDownstreamPower: prometheus.NewGaugeVec(
+			prometheus.GaugeOpts{
+				Name: "hitron_ofdm_downstream_power_dbmv",
+				Help: "OFDM downstream channel power level in dBmV",
+			},
+			[]string{"receive", "frequency", "fft_type"},
+		),
+
+		ofdmDownstreamSNR: prometheus.NewGaugeVec(
+			prometheus.GaugeOpts{
+				Name: "hitron_ofdm_downstream_snr_db",
+				Help: "OFDM downstream channel signal-to-noise ratio in dB",
+			},
+			[]string{"receive", "frequency", "fft_type"},
+		),
+
+		ofdmDownstreamFreq: prometheus.NewGaugeVec(
+			prometheus.GaugeOpts{
+				Name: "hitron_ofdm_downstream_frequency_hz",
+				Help: "OFDM downstream channel frequency in Hz",
+			},
+			[]string{"receive", "fft_type"},
+		),
+
+		ofdmDownstreamCorrectables: prometheus.NewCounterVec(
+			prometheus.CounterOpts{
+				Name: "hitron_ofdm_downstream_correctables_total",
+				Help: "Total number of correctable errors on OFDM downstream channel",
+			},
+			[]string{"receive", "frequency", "fft_type"},
+		),
+
+		ofdmDownstreamUncorrectables: prometheus.NewCounterVec(
+			prometheus.CounterOpts{
+				Name: "hitron_ofdm_downstream_uncorrectables_total",
+				Help: "Total number of uncorrectable errors on OFDM downstream channel",
+			},
+			[]string{"receive", "frequency", "fft_type"},
+		),
+
+		ofdmDownstreamLocks: prometheus.NewGaugeVec(
+			prometheus.GaugeOpts{
+				Name: "hitron_ofdm_downstream_locks",
+				Help: "OFDM downstream channel lock status (1 = locked, 0 = unlocked)",
+			},
+			[]string{"receive", "frequency", "lock_type"},
+		),
+
+		// OFDM Upstream metrics
+		ofdmUpstreamPower: prometheus.NewGaugeVec(
+			prometheus.GaugeOpts{
+				Name: "hitron_ofdm_upstream_power_dbmv",
+				Help: "OFDM upstream channel power level in dBmV",
+			},
+			[]string{"usch_index", "frequency", "state"},
+		),
+
+		ofdmUpstreamFreq: prometheus.NewGaugeVec(
+			prometheus.GaugeOpts{
+				Name: "hitron_ofdm_upstream_frequency_hz",
+				Help: "OFDM upstream channel frequency in Hz",
+			},
+			[]string{"usch_index", "state"},
+		),
+
+		ofdmUpstreamBandwidth: prometheus.NewGaugeVec(
+			prometheus.GaugeOpts{
+				Name: "hitron_ofdm_upstream_bandwidth_mhz",
+				Help: "OFDM upstream channel bandwidth in MHz",
+			},
+			[]string{"usch_index", "frequency", "state"},
+		),
+
+		ofdmUpstreamState: prometheus.NewGaugeVec(
+			prometheus.GaugeOpts{
+				Name: "hitron_ofdm_upstream_state",
+				Help: "OFDM upstream channel state (1 = operate, 0 = disabled)",
+			},
+			[]string{"usch_index", "frequency"},
+		),
+
+		// Link status metrics
+		linkStatus: prometheus.NewGaugeVec(
+			prometheus.GaugeOpts{
+				Name: "hitron_link_status",
+				Help: "Link status (1 = up, 0 = down)",
+			},
+			[]string{"duplex"},
+		),
+
+		linkSpeed: prometheus.NewGaugeVec(
+			prometheus.GaugeOpts{
+				Name: "hitron_link_speed_mbps",
+				Help: "Link speed in Mbps",
+			},
+			[]string{"duplex"},
+		),
 	}
 }
 
@@ -261,6 +465,18 @@ func (c *MetricsCollector) Describe(ch chan<- *prometheus.Desc) {
 	c.upstreamPower.Describe(ch)
 	c.upstreamFreq.Describe(ch)
 	c.upstreamSymbolRate.Describe(ch)
+	c.ofdmDownstreamPower.Describe(ch)
+	c.ofdmDownstreamSNR.Describe(ch)
+	c.ofdmDownstreamFreq.Describe(ch)
+	c.ofdmDownstreamCorrectables.Describe(ch)
+	c.ofdmDownstreamUncorrectables.Describe(ch)
+	c.ofdmDownstreamLocks.Describe(ch)
+	c.ofdmUpstreamPower.Describe(ch)
+	c.ofdmUpstreamFreq.Describe(ch)
+	c.ofdmUpstreamBandwidth.Describe(ch)
+	c.ofdmUpstreamState.Describe(ch)
+	c.linkStatus.Describe(ch)
+	c.linkSpeed.Describe(ch)
 	c.systemInfo.Describe(ch)
 }
 
@@ -315,6 +531,104 @@ func (c *MetricsCollector) Collect(ch chan<- prometheus.Metric) {
 		}
 	}
 
+	// Collect OFDM downstream metrics
+	ofdmDsInfo, err := c.client.GetOFDMDownstreamInfo()
+	if err != nil {
+		log.Printf("Failed to get OFDM downstream info: %v", err)
+	} else {
+		for _, channel := range ofdmDsInfo {
+			// Parse numeric values from strings
+			frequency, _ := strconv.ParseFloat(strings.TrimSpace(channel.Subcarr0freqFreq), 64)
+			powerLevel, _ := strconv.ParseFloat(channel.PLCPower, 64)
+			snr, _ := strconv.ParseFloat(channel.SNR, 64)
+			corrected, _ := strconv.ParseInt(channel.Correcteds, 10, 64)
+			uncorrect, _ := strconv.ParseInt(channel.Uncorrect, 10, 64)
+
+			labels := []string{
+				channel.Receive,
+				strings.TrimSpace(channel.Subcarr0freqFreq),
+				channel.FFTType,
+			}
+
+			c.ofdmDownstreamPower.WithLabelValues(labels...).Set(powerLevel)
+			c.ofdmDownstreamSNR.WithLabelValues(labels...).Set(snr)
+			c.ofdmDownstreamFreq.WithLabelValues(channel.Receive, channel.FFTType).Set(frequency)
+			c.ofdmDownstreamCorrectables.WithLabelValues(labels...).Add(float64(corrected))
+			c.ofdmDownstreamUncorrectables.WithLabelValues(labels...).Add(float64(uncorrect))
+
+			// Lock status metrics
+			lockLabels := []string{channel.Receive, strings.TrimSpace(channel.Subcarr0freqFreq)}
+			plcLock := 0.0
+			if strings.TrimSpace(channel.PLCLock) == "YES" {
+				plcLock = 1.0
+			}
+			ncpLock := 0.0
+			if strings.TrimSpace(channel.NCPLock) == "YES" {
+				ncpLock = 1.0
+			}
+			mdc1Lock := 0.0
+			if strings.TrimSpace(channel.MDC1Lock) == "YES" {
+				mdc1Lock = 1.0
+			}
+
+			c.ofdmDownstreamLocks.WithLabelValues(append(lockLabels, "plc")...).Set(plcLock)
+			c.ofdmDownstreamLocks.WithLabelValues(append(lockLabels, "ncp")...).Set(ncpLock)
+			c.ofdmDownstreamLocks.WithLabelValues(append(lockLabels, "mdc1")...).Set(mdc1Lock)
+		}
+	}
+
+	// Collect OFDM upstream metrics
+	ofdmUsInfo, err := c.client.GetOFDMUpstreamInfo()
+	if err != nil {
+		log.Printf("Failed to get OFDM upstream info: %v", err)
+	} else {
+		for _, channel := range ofdmUsInfo {
+			// Parse numeric values from strings
+			frequency, _ := strconv.ParseFloat(channel.Frequency, 64)
+			repPower, _ := strconv.ParseFloat(strings.TrimSpace(channel.RepPower), 64)
+			bandwidth, _ := strconv.ParseFloat(strings.TrimSpace(channel.ChannelBw), 64)
+
+			state := strings.TrimSpace(channel.State)
+			stateValue := 0.0
+			if state == "OPERATE" {
+				stateValue = 1.0
+			}
+
+			labels := []string{
+				channel.USCHIndex,
+				channel.Frequency,
+				state,
+			}
+
+			if frequency > 0 { // Only collect metrics for active channels
+				c.ofdmUpstreamPower.WithLabelValues(labels...).Set(repPower)
+				c.ofdmUpstreamFreq.WithLabelValues(channel.USCHIndex, state).Set(frequency)
+				c.ofdmUpstreamBandwidth.WithLabelValues(labels...).Set(bandwidth)
+			}
+			c.ofdmUpstreamState.WithLabelValues(channel.USCHIndex, channel.Frequency).Set(stateValue)
+		}
+	}
+
+	// Collect link status
+	linkInfo, err := c.client.GetLinkStatus()
+	if err != nil {
+		log.Printf("Failed to get link status: %v", err)
+	} else {
+		// Parse link status
+		status := 0.0
+		if linkInfo.LinkStatus == "Up" {
+			status = 1.0
+		}
+
+		// Parse link speed (extract number from "2500Mbps")
+		speedStr := strings.TrimSuffix(linkInfo.LinkSpeed, "Mbps")
+		speed, _ := strconv.ParseFloat(speedStr, 64)
+
+		duplex := linkInfo.LinkDuplex
+		c.linkStatus.WithLabelValues(duplex).Set(status)
+		c.linkSpeed.WithLabelValues(duplex).Set(speed)
+	}
+
 	// Collect system info
 	sysInfo, err := c.client.GetSystemInfo()
 	if err != nil {
@@ -336,6 +650,18 @@ func (c *MetricsCollector) Collect(ch chan<- prometheus.Metric) {
 	c.upstreamPower.Collect(ch)
 	c.upstreamFreq.Collect(ch)
 	c.upstreamSymbolRate.Collect(ch)
+	c.ofdmDownstreamPower.Collect(ch)
+	c.ofdmDownstreamSNR.Collect(ch)
+	c.ofdmDownstreamFreq.Collect(ch)
+	c.ofdmDownstreamCorrectables.Collect(ch)
+	c.ofdmDownstreamUncorrectables.Collect(ch)
+	c.ofdmDownstreamLocks.Collect(ch)
+	c.ofdmUpstreamPower.Collect(ch)
+	c.ofdmUpstreamFreq.Collect(ch)
+	c.ofdmUpstreamBandwidth.Collect(ch)
+	c.ofdmUpstreamState.Collect(ch)
+	c.linkStatus.Collect(ch)
+	c.linkSpeed.Collect(ch)
 	c.systemInfo.Collect(ch)
 }
 

@@ -38,17 +38,35 @@ go build -o coda56-exporter
 
 The exporter exposes the following metrics:
 
-### Downstream Channel Metrics
+### QAM Downstream Channel Metrics (32 channels)
 - `hitron_downstream_power_dbmv`: Power level in dBmV
 - `hitron_downstream_snr_db`: Signal-to-noise ratio in dB
 - `hitron_downstream_frequency_hz`: Frequency in Hz
 - `hitron_downstream_correctables_total`: Total correctable errors
 - `hitron_downstream_uncorrectables_total`: Total uncorrectable errors
 
-### Upstream Channel Metrics
+### QAM Upstream Channel Metrics (4 channels)
 - `hitron_upstream_power_dbmv`: Power level in dBmV
 - `hitron_upstream_frequency_hz`: Frequency in Hz
-- `hitron_upstream_symbol_rate`: Symbol rate
+- `hitron_upstream_symbol_rate`: Symbol rate (bandwidth)
+
+### OFDM Downstream Channel Metrics (2 channels)
+- `hitron_ofdm_downstream_power_dbmv`: Power level in dBmV
+- `hitron_ofdm_downstream_snr_db`: Signal-to-noise ratio in dB
+- `hitron_ofdm_downstream_frequency_hz`: Frequency in Hz
+- `hitron_ofdm_downstream_correctables_total`: Total correctable errors
+- `hitron_ofdm_downstream_uncorrectables_total`: Total uncorrectable errors
+- `hitron_ofdm_downstream_locks`: Lock status for PLC/NCP/MDC1 (1=locked, 0=unlocked)
+
+### OFDM Upstream Channel Metrics (2 channels)
+- `hitron_ofdm_upstream_power_dbmv`: Power level in dBmV
+- `hitron_ofdm_upstream_frequency_hz`: Frequency in Hz
+- `hitron_ofdm_upstream_bandwidth_mhz`: Channel bandwidth in MHz
+- `hitron_ofdm_upstream_state`: Channel state (1=operate, 0=disabled)
+
+### Link Status Metrics
+- `hitron_link_status`: Link status (1=up, 0=down)
+- `hitron_link_speed_mbps`: Link speed in Mbps
 
 ### System Metrics
 - `hitron_system_info`: System information with labels for hardware/software versions
@@ -57,12 +75,12 @@ The exporter exposes the following metrics:
 
 The exporter polls the following modem API endpoints:
 
-- `/dsinfo.asp`: Downstream QAM channel information
-- `/dsofdminfo.asp`: Downstream OFDM channel details
-- `/usinfo.asp`: Upstream QAM channel information
-- `/usofdminfo.asp`: Upstream OFDM channel details
-- `/getSysInfo.asp`: System information
-- `/getLinkStatus.asp`: Link speed status
+- `/data/dsinfo.asp`: Downstream QAM channel information (32 channels)
+- `/data/dsofdminfo.asp`: Downstream OFDM channel details (2 channels)
+- `/data/usinfo.asp`: Upstream QAM channel information (4 channels)
+- `/data/usofdminfo.asp`: Upstream OFDM channel details (2 channels)
+- `/data/getSysInfo.asp`: System information and hardware details
+- `/data/getLinkStatus.asp`: Link connection status and speed
 
 ## Network Requirements
 
