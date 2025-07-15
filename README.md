@@ -44,6 +44,7 @@ The exporter exposes the following metrics:
 - `hitron_downstream_frequency_hz`: Frequency in Hz
 - `hitron_downstream_correctables_total`: Total correctable errors
 - `hitron_downstream_uncorrectables_total`: Total uncorrectable errors
+- `hitron_downstream_octets_bytes`: Data received in bytes
 
 ### QAM Upstream Channel Metrics (4 channels)
 - `hitron_upstream_power_dbmv`: Power level in dBmV
@@ -56,6 +57,7 @@ The exporter exposes the following metrics:
 - `hitron_ofdm_downstream_frequency_hz`: Frequency in Hz
 - `hitron_ofdm_downstream_correctables_total`: Total correctable errors
 - `hitron_ofdm_downstream_uncorrectables_total`: Total uncorrectable errors
+- `hitron_ofdm_downstream_octets_bytes`: Data received in bytes
 - `hitron_ofdm_downstream_locks`: Lock status for PLC/NCP/MDC1 (1=locked, 0=unlocked)
 
 ### OFDM Upstream Channel Metrics (2 channels)

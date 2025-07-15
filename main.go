@@ -242,6 +242,47 @@ func (m *ModemClient) GetLinkStatus() (*LinkStatus, error) {
 	return m.parseLinkStatus(data)
 }
 
+// parseComplexOctets parses QAM downstream octet format like "53 * 2e32 + 4142950845"
+func parseComplexOctets(octetsStr string) int64 {
+	// Handle simple numeric format first
+	if simple, err := strconv.ParseInt(octetsStr, 10, 64); err == nil {
+		return simple
+	}
+	
+	// Parse complex format: "53 * 2e32 + 4142950845"
+	// Split on " + " to get the two parts
+	parts := strings.Split(octetsStr, " + ")
+	if len(parts) != 2 {
+		return 0
+	}
+	
+	// Parse the high part: "53 * 2e32"
+	highParts := strings.Split(parts[0], " * ")
+	if len(highParts) != 2 {
+		return 0
+	}
+	
+	multiplier, err1 := strconv.ParseFloat(highParts[0], 64)
+	factor, err2 := strconv.ParseFloat(highParts[1], 64)
+	lowPart, err3 := strconv.ParseFloat(parts[1], 64)
+	
+	if err1 != nil || err2 != nil || err3 != nil {
+		return 0
+	}
+	
+	// Calculate: multiplier * factor + lowPart
+	// Use float64 for calculation to handle large numbers, then convert
+	result := multiplier*factor + lowPart
+	
+	// For very large numbers, just return the low part since the high part 
+	// represents data transferred over a very long time and may overflow
+	if result > 9.223372036854775e+18 { // Close to int64 max
+		return int64(lowPart)
+	}
+	
+	return int64(result)
+}
+
 type MetricsCollector struct {
 	client *ModemClient
 
@@ -251,6 +292,7 @@ type MetricsCollector struct {
 	downstreamFreq           *prometheus.GaugeVec
 	downstreamCorrectables   *prometheus.CounterVec
 	downstreamUncorrectables *prometheus.CounterVec
+	downstreamOctets         *prometheus.GaugeVec
 
 	// Upstream metrics
 	upstreamPower      *prometheus.GaugeVec
@@ -263,6 +305,7 @@ type MetricsCollector struct {
 	ofdmDownstreamFreq           *prometheus.GaugeVec
 	ofdmDownstreamCorrectables   *prometheus.CounterVec
 	ofdmDownstreamUncorrectables *prometheus.CounterVec
+	ofdmDownstreamOctets         *prometheus.GaugeVec
 	ofdmDownstreamLocks          *prometheus.GaugeVec
 
 	// OFDM Upstream metrics
@@ -319,6 +362,14 @@ func NewMetricsCollector(client *ModemClient) *MetricsCollector {
 			prometheus.CounterOpts{
 				Name: "hitron_downstream_uncorrectables_total",
 				Help: "Total number of uncorrectable errors on downstream channel",
+			},
+			[]string{"channel_id", "frequency", "modulation"},
+		),
+
+		downstreamOctets: prometheus.NewGaugeVec(
+			prometheus.GaugeOpts{
+				Name: "hitron_downstream_octets_bytes",
+				Help: "Number of octets (bytes) received on downstream channel",
 			},
 			[]string{"channel_id", "frequency", "modulation"},
 		),
@@ -396,6 +447,14 @@ func NewMetricsCollector(client *ModemClient) *MetricsCollector {
 			[]string{"receive", "frequency", "fft_type"},
 		),
 
+		ofdmDownstreamOctets: prometheus.NewGaugeVec(
+			prometheus.GaugeOpts{
+				Name: "hitron_ofdm_downstream_octets_bytes",
+				Help: "Number of octets (bytes) received on OFDM downstream channel",
+			},
+			[]string{"receive", "frequency", "fft_type"},
+		),
+
 		ofdmDownstreamLocks: prometheus.NewGaugeVec(
 			prometheus.GaugeOpts{
 				Name: "hitron_ofdm_downstream_locks",
@@ -462,6 +521,7 @@ func (c *MetricsCollector) Describe(ch chan<- *prometheus.Desc) {
 	c.downstreamFreq.Describe(ch)
 	c.downstreamCorrectables.Describe(ch)
 	c.downstreamUncorrectables.Describe(ch)
+	c.downstreamOctets.Describe(ch)
 	c.upstreamPower.Describe(ch)
 	c.upstreamFreq.Describe(ch)
 	c.upstreamSymbolRate.Describe(ch)
@@ -470,6 +530,7 @@ func (c *MetricsCollector) Describe(ch chan<- *prometheus.Desc) {
 	c.ofdmDownstreamFreq.Describe(ch)
 	c.ofdmDownstreamCorrectables.Describe(ch)
 	c.ofdmDownstreamUncorrectables.Describe(ch)
+	c.ofdmDownstreamOctets.Describe(ch)
 	c.ofdmDownstreamLocks.Describe(ch)
 	c.ofdmUpstreamPower.Describe(ch)
 	c.ofdmUpstreamFreq.Describe(ch)
@@ -494,6 +555,9 @@ func (c *MetricsCollector) Collect(ch chan<- prometheus.Metric) {
 			corrected, _ := strconv.ParseInt(channel.Correcteds, 10, 64)
 			uncorrect, _ := strconv.ParseInt(channel.Uncorrect, 10, 64)
 			
+			// Parse complex octet format: "53 * 2e32 + 4142950845"
+			octets := parseComplexOctets(channel.DSoctets)
+			
 			labels := []string{
 				channel.ChannelID,
 				channel.Frequency,
@@ -505,6 +569,7 @@ func (c *MetricsCollector) Collect(ch chan<- prometheus.Metric) {
 			c.downstreamFreq.WithLabelValues(channel.ChannelID, channel.Modulation).Set(frequency)
 			c.downstreamCorrectables.WithLabelValues(labels...).Add(float64(corrected))
 			c.downstreamUncorrectables.WithLabelValues(labels...).Add(float64(uncorrect))
+			c.downstreamOctets.WithLabelValues(labels...).Set(float64(octets))
 		}
 	}
 
@@ -543,6 +608,9 @@ func (c *MetricsCollector) Collect(ch chan<- prometheus.Metric) {
 			snr, _ := strconv.ParseFloat(channel.SNR, 64)
 			corrected, _ := strconv.ParseInt(channel.Correcteds, 10, 64)
 			uncorrect, _ := strconv.ParseInt(channel.Uncorrect, 10, 64)
+			
+			// Parse simple octet format for OFDM: "53196813856"
+			octets, _ := strconv.ParseInt(channel.DSoctets, 10, 64)
 
 			labels := []string{
 				channel.Receive,
@@ -555,6 +623,7 @@ func (c *MetricsCollector) Collect(ch chan<- prometheus.Metric) {
 			c.ofdmDownstreamFreq.WithLabelValues(channel.Receive, channel.FFTType).Set(frequency)
 			c.ofdmDownstreamCorrectables.WithLabelValues(labels...).Add(float64(corrected))
 			c.ofdmDownstreamUncorrectables.WithLabelValues(labels...).Add(float64(uncorrect))
+			c.ofdmDownstreamOctets.WithLabelValues(labels...).Set(float64(octets))
 
 			// Lock status metrics
 			lockLabels := []string{channel.Receive, strings.TrimSpace(channel.Subcarr0freqFreq)}
@@ -647,6 +716,7 @@ func (c *MetricsCollector) Collect(ch chan<- prometheus.Metric) {
 	c.downstreamFreq.Collect(ch)
 	c.downstreamCorrectables.Collect(ch)
 	c.downstreamUncorrectables.Collect(ch)
+	c.downstreamOctets.Collect(ch)
 	c.upstreamPower.Collect(ch)
 	c.upstreamFreq.Collect(ch)
 	c.upstreamSymbolRate.Collect(ch)
@@ -655,6 +725,7 @@ func (c *MetricsCollector) Collect(ch chan<- prometheus.Metric) {
 	c.ofdmDownstreamFreq.Collect(ch)
 	c.ofdmDownstreamCorrectables.Collect(ch)
 	c.ofdmDownstreamUncorrectables.Collect(ch)
+	c.ofdmDownstreamOctets.Collect(ch)
 	c.ofdmDownstreamLocks.Collect(ch)
 	c.ofdmUpstreamPower.Collect(ch)
 	c.ofdmUpstreamFreq.Collect(ch)
