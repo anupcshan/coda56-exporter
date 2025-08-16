@@ -19,7 +19,6 @@ import (
 var (
 	modemHost  = flag.String("modem-host", "https://192.168.100.1", "Hitron CODA56 modem host URL")
 	listenAddr = flag.String("listen-addr", ":2632", "Address to listen on for HTTP requests")
-	interval   = flag.Duration("interval", 30*time.Second, "Polling interval")
 	timeout    = flag.Duration("timeout", 10*time.Second, "HTTP request timeout")
 )
 
@@ -51,45 +50,45 @@ type UpstreamInfo struct {
 }
 
 type SystemInfo struct {
-	HWVersion     string `json:"hwVersion"`
-	SWVersion     string `json:"swVersion"`
-	SerialNumber  string `json:"serialNumber"`
-	RFMac         string `json:"rfMac"`
-	WanIP         string `json:"wanIp"`
-	SystemUptime  string `json:"systemUptime"`
-	SystemTime    string `json:"systemTime"`
-	Timezone      string `json:"timezone"`
-	WRecPkt       string `json:"WRecPkt"`
-	WSendPkt      string `json:"WSendPkt"`
-	LanIP         string `json:"lanIp"`
-	LRecPkt       string `json:"LRecPkt"`
-	LSendPkt      string `json:"LSendPkt"`
+	HWVersion    string `json:"hwVersion"`
+	SWVersion    string `json:"swVersion"`
+	SerialNumber string `json:"serialNumber"`
+	RFMac        string `json:"rfMac"`
+	WanIP        string `json:"wanIp"`
+	SystemUptime string `json:"systemUptime"`
+	SystemTime   string `json:"systemTime"`
+	Timezone     string `json:"timezone"`
+	WRecPkt      string `json:"WRecPkt"`
+	WSendPkt     string `json:"WSendPkt"`
+	LanIP        string `json:"lanIp"`
+	LRecPkt      string `json:"LRecPkt"`
+	LSendPkt     string `json:"LSendPkt"`
 }
 
 type OFDMDownstreamInfo struct {
-	Receive            string `json:"receive"`
-	FFTType            string `json:"ffttype"`
-	Subcarr0freqFreq   string `json:"Subcarr0freqFreq"`
-	PLCLock            string `json:"plclock"`
-	NCPLock            string `json:"ncplock"`
-	MDC1Lock           string `json:"mdc1lock"`
-	PLCPower           string `json:"plcpower"`
-	SNR                string `json:"SNR"`
-	DSoctets           string `json:"dsoctets"`
-	Correcteds         string `json:"correcteds"`
-	Uncorrect          string `json:"uncorrect"`
+	Receive          string `json:"receive"`
+	FFTType          string `json:"ffttype"`
+	Subcarr0freqFreq string `json:"Subcarr0freqFreq"`
+	PLCLock          string `json:"plclock"`
+	NCPLock          string `json:"ncplock"`
+	MDC1Lock         string `json:"mdc1lock"`
+	PLCPower         string `json:"plcpower"`
+	SNR              string `json:"SNR"`
+	DSoctets         string `json:"dsoctets"`
+	Correcteds       string `json:"correcteds"`
+	Uncorrect        string `json:"uncorrect"`
 }
 
 type OFDMUpstreamInfo struct {
-	USCHIndex    string `json:"uschindex"`
-	State        string `json:"state"`
-	Frequency    string `json:"frequency"`
-	DigAtten     string `json:"digAtten"`
-	DigAttenBo   string `json:"digAttenBo"`
-	ChannelBw    string `json:"channelBw"`
-	RepPower     string `json:"repPower"`
-	RepPower1_6  string `json:"repPower1_6"`
-	FFTVal       string `json:"fftVal"`
+	USCHIndex   string `json:"uschindex"`
+	State       string `json:"state"`
+	Frequency   string `json:"frequency"`
+	DigAtten    string `json:"digAtten"`
+	DigAttenBo  string `json:"digAttenBo"`
+	ChannelBw   string `json:"channelBw"`
+	RepPower    string `json:"repPower"`
+	RepPower1_6 string `json:"repPower1_6"`
+	FFTVal      string `json:"fftVal"`
 }
 
 type LinkStatus struct {
@@ -248,38 +247,38 @@ func parseComplexOctets(octetsStr string) int64 {
 	if simple, err := strconv.ParseInt(octetsStr, 10, 64); err == nil {
 		return simple
 	}
-	
+
 	// Parse complex format: "53 * 2e32 + 4142950845"
 	// Split on " + " to get the two parts
 	parts := strings.Split(octetsStr, " + ")
 	if len(parts) != 2 {
 		return 0
 	}
-	
+
 	// Parse the high part: "53 * 2e32"
 	highParts := strings.Split(parts[0], " * ")
 	if len(highParts) != 2 {
 		return 0
 	}
-	
+
 	multiplier, err1 := strconv.ParseFloat(highParts[0], 64)
 	factor, err2 := strconv.ParseFloat(highParts[1], 64)
 	lowPart, err3 := strconv.ParseFloat(parts[1], 64)
-	
+
 	if err1 != nil || err2 != nil || err3 != nil {
 		return 0
 	}
-	
+
 	// Calculate: multiplier * factor + lowPart
 	// Use float64 for calculation to handle large numbers, then convert
 	result := multiplier*factor + lowPart
-	
-	// For very large numbers, just return the low part since the high part 
+
+	// For very large numbers, just return the low part since the high part
 	// represents data transferred over a very long time and may overflow
 	if result > 9.223372036854775e+18 { // Close to int64 max
 		return int64(lowPart)
 	}
-	
+
 	return int64(result)
 }
 
@@ -554,10 +553,10 @@ func (c *MetricsCollector) Collect(ch chan<- prometheus.Metric) {
 			snr, _ := strconv.ParseFloat(channel.SNR, 64)
 			corrected, _ := strconv.ParseInt(channel.Correcteds, 10, 64)
 			uncorrect, _ := strconv.ParseInt(channel.Uncorrect, 10, 64)
-			
+
 			// Parse complex octet format: "53 * 2e32 + 4142950845"
 			octets := parseComplexOctets(channel.DSoctets)
-			
+
 			labels := []string{
 				channel.ChannelID,
 				channel.Frequency,
@@ -583,7 +582,7 @@ func (c *MetricsCollector) Collect(ch chan<- prometheus.Metric) {
 			frequency, _ := strconv.ParseFloat(channel.Frequency, 64)
 			powerLevel, _ := strconv.ParseFloat(channel.SignalStrength, 64)
 			bandwidth, _ := strconv.ParseFloat(channel.Bandwidth, 64)
-			
+
 			labels := []string{
 				channel.ChannelID,
 				channel.Frequency,
@@ -608,7 +607,7 @@ func (c *MetricsCollector) Collect(ch chan<- prometheus.Metric) {
 			snr, _ := strconv.ParseFloat(channel.SNR, 64)
 			corrected, _ := strconv.ParseInt(channel.Correcteds, 10, 64)
 			uncorrect, _ := strconv.ParseInt(channel.Uncorrect, 10, 64)
-			
+
 			// Parse simple octet format for OFDM: "53196813856"
 			octets, _ := strconv.ParseInt(channel.DSoctets, 10, 64)
 
@@ -742,7 +741,6 @@ func main() {
 	log.Printf("Starting Hitron CODA56 Prometheus Exporter")
 	log.Printf("Modem host: %s", *modemHost)
 	log.Printf("Listen address: %s", *listenAddr)
-	log.Printf("Polling interval: %s", *interval)
 
 	client := NewModemClient(*modemHost, *timeout)
 	collector := NewMetricsCollector(client)
